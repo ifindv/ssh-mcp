@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssh-mcp"
+version = "1.0.0"
+description = "MCP server for SSH remote command execution and file operations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "SOFTAI", email = "contact@softai.dev"}
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "ssh",
+    "remote",
+    "sftp",
+    "server"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0.0",
+    "paramiko>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-organization/ssh-mcp"
+Documentation = "https://github.com/your-organization/ssh-mcp#readme"
+Repository = "https://github.com/your-organization/ssh-mcp"
+Issues = "https://github.com/your-organization/ssh-mcp/issues"
+
+[project.scripts]
+ssh-mcp = "ssh_mcp:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ssh_mcp*"]
+
+[tool.setuptools.package-data]
+ssh_mcp = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

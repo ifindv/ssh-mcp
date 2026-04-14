@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include CLAUDE.md
+recursive-exclude __pycache__ *
+recursive-exclude *.pyc *
+recursive-exclude *.egg-info *
+recursive-exclude .git *
+recursive-exclude .mypy_cache *
