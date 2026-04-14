@@ -59,21 +59,22 @@ npx @modelcontextprotocol/inspector python -m ssh_mcp
 
 ### Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `ssh_connect` | Establish SSH connection to remote server |
-| `ssh_status` | Check status of SSH sessions |
-| `ssh_execute` | Execute commands on remote server |
-| `ssh_upload_file` | Upload files to remote server |
-| `ssh_download_file` | Download files from remote server |
-| `ssh_list_files` | List files in remote directory |
-| `ssh_disconnect` | Close SSH connection |
+| Tool                  | Description                               |
+| --------------------- | ----------------------------------------- |
+| `ssh_connect`       | Establish SSH connection to remote server |
+| `ssh_status`        | Check status of SSH sessions              |
+| `ssh_execute`       | Execute commands on remote server         |
+| `ssh_upload_file`   | Upload files to remote server             |
+| `ssh_download_file` | Download files from remote server         |
+| `ssh_list_files`    | List files in remote directory            |
+| `ssh_disconnect`    | Close SSH connection                      |
 
 ### Example Workflow
 
 #### 1. Connect to a server
 
 Using password authentication:
+
 ```python
 {
   "host": "192.168.1.100",
@@ -84,6 +85,7 @@ Using password authentication:
 ```
 
 Using SSH key authentication:
+
 ```python
 {
   "host": "192.168.1.100",
@@ -151,6 +153,7 @@ Using SSH key authentication:
 ### Session Management
 
 Multiple concurrent SSH sessions are supported. Each session is identified by a `session_id`:
+
 - Auto-generated as `{username}@{host}:{port}` if not specified
 - Can be explicitly provided for custom naming
 - Sessions persist as long as the server is running
@@ -160,10 +163,11 @@ Multiple concurrent SSH sessions are supported. Each session is identified by a 
 The server supports two authentication methods:
 
 1. **Password authentication**:
+
    - Provide `password` parameter in `ssh_connect`
    - Suitable for quick testing or environments where keys are not available
-
 2. **SSH Key authentication** (recommended for production):
+
    - Provide `private_key_path` parameter pointing to your private key file
    - Optionally provide `private_key_password` for encrypted keys
    - More secure than password-based authentication
@@ -181,7 +185,7 @@ Tools that return structured data support two formats:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-organization/ssh-mcp.git
+git clone https://github.com/ifindv/ssh-mcp.git
 cd ssh-mcp
 
 # Install in development mode
@@ -200,6 +204,7 @@ mypy ssh_mcp/
 ### Code Style
 
 This project uses:
+
 - **Black** for code formatting (line length: 100)
 - **MyPy** for static type checking
 - **PEP 8** for style guidelines
