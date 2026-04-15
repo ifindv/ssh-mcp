@@ -105,12 +105,96 @@ Ensure all fields in `pyproject.toml` are filled correctly, especially:
 - `authors` with email
 - `readme` file exists
 
-## Continuous Publishing
+## Continuous Publishing with GitHub Actions
 
-For automated publishing, consider using GitHub Actions. See `.github/workflows/publish.yml` (if created).
+This project includes a GitHub Actions workflow for automated publishing to PyPI using trusted publishing.
+
+### Setting Up Trusted Publishing
+
+1. **Configure PyPI trusted publisher**:
+
+   - Go to https://pypi.org/manage/account/publishing/
+   - Click "Add a new pending publisher"
+   - Fill in the following:
+     - **PyPI Project Name**: `ssh-mcp`
+     - **Owner**: `ifindv` (your GitHub username/organization)
+     - **Repository name**: `ssh-mcp` (your repository name)
+     - **Workflow name**: `publish.yml`
+     - **Environment name** (optional): leave blank
+
+2. **Push a tag to trigger release**:
+
+   ```bash
+   # Update version in pyproject.toml
+   # e.g., change version = "1.0.0" to version = "1.0.1"
+
+   # Commit the change
+   git add pyproject.toml
+   git commit -m "Bump version to 1.0.1"
+   git push
+
+   # Create and push a tag
+   git tag v1.0.1
+   git push origin v1.0.1
+   ```
+
+   The workflow will automatically trigger and publish to PyPI.
+
+3. **Manual trigger** (optional):
+
+   - Go to Actions tab in GitHub
+   - Select "Publish to PyPI" workflow
+   - Click "Run workflow" button
+
+### Workflow Details
+
+The workflow (`.github/workflows/publish.yml`):
+- Triggers on tag pushes matching `v*.*.*` (e.g., `v1.0.0`, `v1.2.3`)
+- Can also be triggered manually via workflow_dispatch
+- Uses trusted publishing (no API tokens needed)
+- Builds and validates the package
+- Publishes to PyPI automatically
+
+### Version Management
+
+Use semantic versioning for releases:
+
+- `MAJOR.MINOR.PATCH`
+  - Increment MAJOR for incompatible changes
+  - Increment MINOR for backwards-compatible features
+  - Increment PATCH for backwards-compatible bug fixes
+
+### Common Issues
+
+### "File already exists"
+
+If you get this error, increment the version number in `pyproject.toml`.
+
+### "Username or password invalid"
+
+When using API tokens:
+- Username: always `__token__`
+- Password: your API token (not your PyPI password)
+
+### Metadata validation errors
+
+Ensure all fields in `pyproject.toml` are filled correctly, especially:
+- `version` (must be unique for each release)
+- `license`
+- `authors` with email
+- `readme` file exists
+
+### "Trust policies not configured for project"
+
+If you see this error from GitHub Actions:
+1. Go to https://pypi.org/manage/account/publishing/
+2. Verify your trusted publisher configuration
+3. Make sure the GitHub repository name matches exactly
+4. Wait a few minutes for PyPI to process the configuration
 
 ## Security Notes
 
 - Never commit API tokens to git
-- Use GitHub secrets for CI/CD
-- Consider using trusted publishers for GitHub Actions instead of tokens
+- Use trusted publishing with GitHub Actions (recommended)
+- If not using trusted publishing, use GitHub secrets for CI/CD
+- API tokens allow access to publish packages - keep them secure
