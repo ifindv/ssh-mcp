@@ -18,13 +18,7 @@ An MCP (Model Context Protocol) server that enables LLMs to interact with remote
 ## Installation
 
 ```bash
-pip install ssh-mcp
-```
-
-Or install from source:
-
-```bash
-pip install -e .
+pip install ssh-mcp-new
 ```
 
 ### Requirements
@@ -43,10 +37,18 @@ pip install -e .
 ssh-mcp
 ```
 
-Or using Python directly:
+### Config in claude code
+
+tips: you can also add python scripts to your path env, it's all up to you.
 
 ```bash
-python -m ssh_mcp
+  "mcpServers": {
+    "ssh-mcp": {
+      "command": "C:\\Users\\DELL\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python311\\Scripts\\ssh-mcp.exe",
+      "args": [],
+      "env": {}
+    }
+  },
 ```
 
 ### Testing with MCP Inspector
