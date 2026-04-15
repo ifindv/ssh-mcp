@@ -5,28 +5,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common Commands
 
 ### Installation
-```bash
-pip install ssh-mcp
-```
 
-Or install from source:
 ```bash
-pip install -e .
+pip install ssh-mcp-new
 ```
 
 ### Running the server
+
 ```bash
 ssh-mcp
-# or
-python -m ssh_mcp
+```
+
+### Config in claude code
+
+tips: you can also add python scripts to your path env, it's all up to you.
+
+```bash
+  "mcpServers": {
+    "ssh-mcp": {
+      "command": "C:\\Users\\DELL\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python311\\Scripts\\ssh-mcp.exe",
+      "args": [],
+      "env": {}
+    }
+  },
 ```
 
 ### Testing with MCP Inspector
+
 ```bash
 npx @modelcontextprotocol/inspector python -m ssh_mcp
 ```
 
 ### Code style
+
 ```bash
 black ssh_mcp/  # Format code
 mypy ssh_mcp/   # Type checking
@@ -39,6 +50,7 @@ This is a single-file MCP server that provides SSH functionality (command execut
 ### Core Patterns
 
 **FastMCP Tool Registration**: All SSH operations are exposed as MCP tools using `@mcp.tool()` decorator. Each tool:
+
 - Defines a Pydantic input model for validation
 - Returns string-formatted responses (JSON or markdown)
 - Uses async functions (though paramiko calls are blocking)
@@ -46,11 +58,13 @@ This is a single-file MCP server that provides SSH functionality (command execut
 **Session Management**: SSH connections are stored in a module-level dictionary `_ssh_connections` keyed by `session_id`. Sessions persist as long as the server runs.
 
 **Input Validation**: Each tool has a dedicated Pydantic model (e.g., `ConnectInput`, `ExecuteInput`) with:
+
 - Field validators (e.g., `_validate_command` prevents injection)
 - Config with `extra='forbid'` to reject unknown parameters
 - Type annotations for all fields
 
 **Response Formatting**: Two output formats are supported:
+
 - `markdown` - human-readable with formatting
 - `json` - machine-readable structured data
 
@@ -59,6 +73,7 @@ This is a single-file MCP server that provides SSH functionality (command execut
 ### Tool Dependencies
 
 All tools except `ssh_connect` require a valid `session_id` from an established connection. The workflow is:
+
 1. `ssh_connect` → establishes connection, returns `session_id`
 2. Other tools → use `session_id` to operate on that connection
 3. `ssh_disconnect` → closes the session
@@ -66,6 +81,7 @@ All tools except `ssh_connect` require a valid `session_id` from an established 
 ### Adding New Tools
 
 When adding a new SSH operation:
+
 1. Create a Pydantic input model with `ConnectInput`-style validation
 2. Use `@mcp.tool()` decorator with appropriate annotations
 3. Call `_ssh_connections.get(session_id)` to retrieve the SSHClient
@@ -75,6 +91,7 @@ When adding a new SSH operation:
 ### Authentication
 
 Supports two auth methods in `ssh_connect`:
+
 - Password: provide `password` parameter
 - SSH key: provide `private_key_path` (optionally `private_key_password` for encrypted keys)
 
