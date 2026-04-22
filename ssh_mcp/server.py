@@ -611,17 +611,16 @@ async def ssh_execute(params: ExecuteInput) -> str:
         else:
             import json
             return json.dumps(result, indent=2, ensure_ascii=False)
-        finally:
-            # Ensure channels are closed
-            if stdout:
-                stdout.close()
-            if stderr:
-                stderr.close()
-            if stdin:
-                stdin.close()
-
     except Exception as e:
         return _handle_ssh_error(e)
+    finally:
+        # Ensure channels are closed
+        if stdout:
+            stdout.close()
+        if stderr:
+            stderr.close()
+        if stdin:
+            stdin.close()
 
 
 @mcp.tool(
