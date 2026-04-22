@@ -209,6 +209,15 @@ class StatusInput(BaseModel):
 # Shared utility functions
 
 
+def _ensure_connection_active(session_id: str) -> bool:
+    """Check if SSH connection is still active."""
+    if session_id not in _ssh_connections:
+        return False
+    client = _ssh_connections[session_id]
+    transport = client.get_transport()
+    return transport is not None and transport.is_active()
+
+
 def _format_command_result(stdout: str, stderr: str, exit_code: int) -> Dict[str, Any]:
     """Format command execution result into structured data."""
     return {
@@ -286,24 +295,58 @@ def _format_size(size: Optional[int]) -> str:
 
 
 def _handle_ssh_error(e: Exception) -> str:
-    """Consistent error formatting for SSH operations."""
+    """Consistent error formatting for SSH operations.
+
+    Returns detailed error information to help agent understand:
+    - Whether the error is recoverable (can retry)
+    - Whether reconnection is needed
+    - What action should be taken
+    """
+    import json
+
+    error_info = {
+        "error_type": type(e).__name__,
+        "error_message": str(e),
+        "recoverable": False,
+        "reconnect_required": False
+    }
+
     if isinstance(e, paramiko.AuthenticationException):
-        return "Error: SSH authentication failed. Check username, password, or private key."
+        error_info["message"] = "SSH authentication failed. Check username, password, or private key."
+        error_info["recoverable"] = True
     elif isinstance(e, paramiko.SSHException):
         if "Could not establish" in str(e):
-            return "Error: Could not establish SSH connection. Check host and port, and ensure SSH service is running."
-        return f"Error: SSH protocol error: {str(e)}"
+            error_info["message"] = "Could not establish SSH connection. Check host and port, and ensure SSH service is running."
+            error_info["recoverable"] = True
+            error_info["reconnect_required"] = True
+        elif "Connection lost" in str(e) or "Broken pipe" in str(e):
+            error_info["message"] = "SSH connection was lost. Please reconnect using ssh_connect."
+            error_info["recoverable"] = True
+            error_info["reconnect_required"] = True
+        else:
+            error_info["message"] = f"SSH protocol error: {str(e)}"
+            error_info["recoverable"] = True
     elif isinstance(e, paramiko.BadHostKeyException):
-        return "Error: SSH host key verification failed. This may indicate a security issue."
+        error_info["message"] = "SSH host key verification failed. This may indicate a security issue."
+        error_info["recoverable"] = False
     elif isinstance(e, FileNotFoundError):
-        return f"Error: File not found: {str(e)}"
+        error_info["message"] = f"File not found: {str(e)}"
+        error_info["recoverable"] = False
     elif isinstance(e, PermissionError):
-        return f"Error: Permission denied: {str(e)}"
+        error_info["message"] = f"Permission denied: {str(e)}"
+        error_info["recoverable"] = False
     elif isinstance(e, TimeoutError):
-        return "Error: Operation timed out. Check network connection or increase timeout value."
+        error_info["message"] = "Operation timed out. Check network connection or increase timeout value."
+        error_info["recoverable"] = True
     elif isinstance(e, KeyError):
-        return f"Error: Session not found. The session ID is invalid or the connection has been closed."
-    return f"Error: Unexpected error: {type(e).__name__}: {str(e)}"
+        error_info["message"] = "Session not found. The session ID is invalid or the connection has been closed."
+        error_info["recoverable"] = False
+        error_info["reconnect_required"] = True
+    else:
+        error_info["message"] = f"Unexpected error: {type(e).__name__}: {str(e)}"
+        error_info["recoverable"] = True
+
+    return json.dumps(error_info, indent=2)
 
 
 # Tool definitions
@@ -513,9 +556,16 @@ async def ssh_execute(params: ExecuteInput) -> str:
         - Returns timeout error if command exceeds timeout limit
     """
     try:
+        # Check session exists
         client = _ssh_connections.get(params.session_id)
         if not client:
-            return "Error: Session not found. Use ssh_connect to establish a connection first."
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} not found"))
+
+        # Check connection is still active
+        if not _ensure_connection_active(params.session_id):
+            # Remove inactive session
+            _ssh_connections.pop(params.session_id, None)
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} connection is inactive"))
 
         # Prepare command with working directory if specified
         full_command = params.command
@@ -561,6 +611,14 @@ async def ssh_execute(params: ExecuteInput) -> str:
         else:
             import json
             return json.dumps(result, indent=2, ensure_ascii=False)
+        finally:
+            # Ensure channels are closed
+            if stdout:
+                stdout.close()
+            if stderr:
+                stderr.close()
+            if stdin:
+                stdin.close()
 
     except Exception as e:
         return _handle_ssh_error(e)
@@ -605,35 +663,45 @@ async def ssh_upload_file(params: UploadFileInput) -> str:
         - Returns error if file size is too large for available bandwidth
     """
     try:
+        # Check session exists
         client = _ssh_connections.get(params.session_id)
         if not client:
-            return "Error: Session not found. Use ssh_connect to establish a connection first."
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} not found"))
+
+        # Check connection is still active
+        if not _ensure_connection_active(params.session_id):
+            # Remove inactive session
+            _ssh_connections.pop(params.session_id, None)
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} connection is inactive"))
 
         # Open SFTP channel
         sftp = client.open_sftp()
         local_file = Path(params.local_path)
 
-        # Upload file
-        sftp.put(str(local_file), params.remote_path)
+        try:
+            # Upload file
+            sftp.put(str(local_file), params.remote_path)
 
-        # Set file permissions
-        sftp.chmod(params.remote_path, params.file_mode)
+            # Set file permissions
+            sftp.chmod(params.remote_path, params.file_mode)
 
-        # Get remote file info
-        remote_attrs = sftp.stat(params.remote_path)
+            # Get remote file info
+            remote_attrs = sftp.stat(params.remote_path)
 
-        sftp.close()
-
-        import json
-        return json.dumps({
-            "status": "success",
-            "local_path": params.local_path,
-            "remote_path": params.remote_path,
-            "size": remote_attrs.st_size,
-            "size_formatted": _format_size(remote_attrs.st_size),
-            "permissions": oct(params.file_mode),
-            "message": f"Successfully uploaded {_format_size(remote_attrs.st_size)} to {params.remote_path}"
-        }, indent=2)
+            import json
+            return json.dumps({
+                "status": "success",
+                "local_path": params.local_path,
+                "remote_path": params.remote_path,
+                "size": remote_attrs.st_size,
+                "size_formatted": _format_size(remote_attrs.st_size),
+                "permissions": oct(params.file_mode),
+                "message": f"Successfully uploaded {_format_size(remote_attrs.st_size)} to {params.remote_path}"
+            }, indent=2)
+        finally:
+            # Ensure SFTP channel is closed
+            if sftp:
+                sftp.close()
 
     except Exception as e:
         return _handle_ssh_error(e)
@@ -678,9 +746,16 @@ async def ssh_download_file(params: DownloadFileInput) -> str:
         - Returns error if local directory doesn't have write permissions
     """
     try:
+        # Check session exists
         client = _ssh_connections.get(params.session_id)
         if not client:
-            return "Error: Session not found. Use ssh_connect to establish a connection first."
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} not found"))
+
+        # Check connection is still active
+        if not _ensure_connection_active(params.session_id):
+            # Remove inactive session
+            _ssh_connections.pop(params.session_id, None)
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} connection is inactive"))
 
         # Check if local file exists
         local_file = Path(params.local_path)
@@ -690,25 +765,29 @@ async def ssh_download_file(params: DownloadFileInput) -> str:
         # Open SFTP channel
         sftp = client.open_sftp()
 
-        # Get remote file info before download
-        remote_attrs = sftp.stat(params.remote_path)
+        try:
+            # Get remote file info before download
+            remote_attrs = sftp.stat(params.remote_path)
 
-        # Ensure parent directory exists
-        local_file.parent.mkdir(parents=True, exist_ok=True)
+            # Ensure parent directory exists
+            local_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Download file
-        sftp.get(params.remote_path, str(local_file))
-        sftp.close()
+            # Download file
+            sftp.get(params.remote_path, str(local_file))
 
-        import json
-        return json.dumps({
-            "status": "success",
-            "remote_path": params.remote_path,
-            "local_path": params.local_path,
-            "size": remote_attrs.st_size,
-            "size_formatted": _format_size(remote_attrs.st_size),
-            "message": f"Successfully downloaded {_format_size(remote_attrs.st_size)} from {params.remote_path}"
-        }, indent=2)
+            import json
+            return json.dumps({
+                "status": "success",
+                "remote_path": params.remote_path,
+                "local_path": params.local_path,
+                "size": remote_attrs.st_size,
+                "size_formatted": _format_size(remote_attrs.st_size),
+                "message": f"Successfully downloaded {_format_size(remote_attrs.st_size)} from {params.remote_path}"
+            }, indent=2)
+        finally:
+            # Ensure SFTP channel is closed
+            if sftp:
+                sftp.close()
 
     except Exception as e:
         return _handle_ssh_error(e)
@@ -753,46 +832,55 @@ async def ssh_list_files(params: ListFilesInput) -> str:
         - Returns error if directory is not readable due to permissions
     """
     try:
+        # Check session exists
         client = _ssh_connections.get(params.session_id)
         if not client:
-            return "Error: Session not found. Use ssh_connect to establish a connection first."
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} not found"))
+
+        # Check connection is still active
+        if not _ensure_connection_active(params.session_id):
+            # Remove inactive session
+            _ssh_connections.pop(params.session_id, None)
+            return _handle_ssh_error(KeyError(f"Session {params.session_id} connection is inactive"))
 
         # Open SFTP channel
         sftp = client.open_sftp()
 
-        # List directory contents
         try:
-            entries = sftp.listdir_attr(params.remote_path)
-        except IOError as e:
-            sftp.close()
-            if "Permission denied" in str(e):
-                return f"Error: Permission denied to read directory: {params.remote_path}"
-            if "No such file" in str(e):
-                return f"Error: Directory not found: {params.remote_path}"
-            return f"Error: Could not list directory: {str(e)}"
+            # List directory contents
+            try:
+                entries = sftp.listdir_attr(params.remote_path)
+            except IOError as e:
+                if "Permission denied" in str(e):
+                    return f"Error: Permission denied to read directory: {params.remote_path}"
+                if "No such file" in str(e):
+                    return f"Error: Directory not found: {params.remote_path}"
+                return f"Error: Could not list directory: {str(e)}"
 
-        sftp.close()
+            # Format entries
+            files = []
+            for entry in entries:
+                if not params.show_hidden and entry.filename.startswith('.'):
+                    continue
 
-        # Format entries
-        files = []
-        for entry in entries:
-            if not params.show_hidden and entry.filename.startswith('.'):
-                continue
+                file_info = _format_file_attrs(entry)
+                file_info['filename'] = entry.filename
+                files.append(file_info)
 
-            file_info = _format_file_attrs(entry)
-            file_info['filename'] = entry.filename
-            files.append(file_info)
-
-        # Format response based on requested format
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return _format_file_list_markdown(files, params.remote_path)
-        else:
-            import json
-            return json.dumps({
-                "path": params.remote_path,
-                "total_items": len(files),
-                "files": files
-            }, indent=2, ensure_ascii=False)
+            # Format response based on requested format
+            if params.response_format == ResponseFormat.MARKDOWN:
+                return _format_file_list_markdown(files, params.remote_path)
+            else:
+                import json
+                return json.dumps({
+                    "path": params.remote_path,
+                    "total_items": len(files),
+                    "files": files
+                }, indent=2, ensure_ascii=False)
+        finally:
+            # Ensure SFTP channel is closed
+            if sftp:
+                sftp.close()
 
     except Exception as e:
         return _handle_ssh_error(e)
@@ -845,7 +933,10 @@ async def ssh_disconnect(params: DisconnectInput) -> str:
         client = _ssh_connections.pop(session_id)
 
         if client:
-            client.close()
+            # Check if connection is still active before closing
+            transport = client.get_transport()
+            if transport and transport.is_active():
+                client.close()
 
         import json
         return json.dumps({
